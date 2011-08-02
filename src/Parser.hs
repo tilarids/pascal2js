@@ -480,8 +480,8 @@ expr_ extras prio = do
                 char ']'
                 return $ mkExpr SetValue exprs)
               <|> try sconstant
-              <|> try iconstant
               <|> try fconstant
+              <|> try iconstant
               <|> try trueconstant
               <|> try falseconstant
               <|> try nilconstant
