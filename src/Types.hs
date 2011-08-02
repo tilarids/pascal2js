@@ -4,6 +4,8 @@ SEE readme for terms of use
 
 -}
 
+module Types where
+
 import Data.Char
 import Data.List
 import Data.Either
