@@ -1,4 +1,4 @@
-name: pas2js
+name: pascal2js
 version: 0.0.1
 cabal-version: -any
 build-type: Simple
@@ -25,7 +25,7 @@ data-dir: ""
 extra-source-files: Parser Types JSGen
 extra-tmp-files:
  
-executable: pas2js
+executable: pascal2js
 main-is: Main.hs
 buildable: True
 build-tools:
