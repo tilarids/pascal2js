@@ -1,6 +1,56 @@
-pascal2js is a rich Pascal to JavaScript translator written in Haskell. It supports all kind of pascal expressions and statements(except of the goto statement). It also supports additional features to implement multitasking. There are some JS runtime files included.
 
-This software is distributed under CC BY-NC-SA license. If you want to use it for commercial purposes please contact authors:
+pascal2js is Turbo Pascal to JavaScript translator written in Haskell. 
+It supports all kind of pascal expressions and statements(except of the 
+goto statement). It also supports additional features to implement 
+multitasking. There are some JS runtime files included.
+
+translator parses and completely typechecks pascal project. At the time
+of this writing, it is used to translate particular project, and was
+not tested on anything else.
+
+CURRENT LIMITATIONS:
+--------------------
+
+* nothing is tested beyond features of particular project, which is not 
+  completed, too
+* object types of Turbo Pascal 5.5 and later are not supported (but can be
+  added later)
+* no gotos (not going to be fixed)
+* no enumerated types
+* support for pointer arithmetics is very poor 
+  (because it is normally found in low-level routines which will 
+  need to be rewritten by hands anyway).
+* tight loops need to be broken in pieces for browser not to hang,
+  this is implemented using javascript yield's, whose support in
+  browsers is poor, even using google-traceur
+* some pchar/string/array_of_char conversions may not always work
+* expression parser has some problems with operator precedence (was written
+  in a hurry), but luckily it causes typechecker to fail. Adding
+  braces helps.
+
+ARCHITECTURAL LIMITATIONS:
+---------------------------
+
+* internally, instead of producing javascript AST with type annotations,
+  it produces plain strings which makes further JS transformation
+  impossible, this is going to be fixed.
+* code is raw, programmers are immature
+
+HISTORY
+-------
+
+this translator was written short before and during Kharkov DOU Hackaton.
+
+TLDR:
+------
+
+this compiler is work in progress, and most likely will not do what you want.
+
+LICENSE:
+--------
+
+This software is distributed under CC BY-NC-SA license. If you want to use it 
+for commercial purposes please contact authors.
 
 Alex Bitney <san@sysdate.com>
 Sergey Kishchenko <voidwrk@gmail.com>
