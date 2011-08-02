@@ -1,8 +1,6 @@
 {-
 
-You may use this code freely to convert opensource and non-profit applications.
-If you wish to convert applications used commercially, please contact
-authors for license and support.
+see README for terms of use
         
 -}
 module Works where
