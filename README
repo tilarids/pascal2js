@@ -1,3 +1,5 @@
+pascal2js is a rich Pascal to JavaScript translator written in Haskell. It supports all kind of pascal expressions and statements(except of the goto statement). It also supports additional features to implement multitasking. There are some JS runtime files included.
+
 This software is distributed under CC BY-NC-SA license. If you want to use it for commercial purposes please contact authors:
 
 Alex Bitney <san@sysdate.com>
