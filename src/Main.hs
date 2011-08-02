@@ -1,16 +1,15 @@
 -----------------------------------------------------------------------------
 --
--- Module      :  Main
--- Copyright   :
--- License     :  AllRightsReserved
---
--- Maintainer  : san, having his mailbox located in google wellknown public webmail domain
--- Stability   :
--- Portability :
---
--- |
+-- Maintainer  : san @ sysdate , com
 --
 -----------------------------------------------------------------------------
+{-
+
+You may use this code freely to convert opensource and non-profit applications.
+If you wish to convert applications used commercially, please contact
+authors for license and support.
+        
+-}
 
 module Main where
 

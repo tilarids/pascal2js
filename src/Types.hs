@@ -1,3 +1,10 @@
+{-
+
+You may use this code freely to convert opensource and non-profit applications.
+If you wish to convert applications used commercially, please contact
+authors for license and support.
+        
+-}
 module Types where
 
 import Data.Char
