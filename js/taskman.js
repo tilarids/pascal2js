@@ -65,7 +65,7 @@ function runTasks_() {
         delay = (1000 / this.fps) - (wMS - sMS);
     }
     var self = this;
-    window.setTimeout(function() { runTasks_.bind(self)() }, delay);
+    io.invokeLater(function() { runTasks_.bind(self)() }, delay);
 }
 TaskManager.prototype.runTasks = function() { runTasks_.bind(this)(); } 
 

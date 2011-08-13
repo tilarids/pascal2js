@@ -307,3 +307,7 @@ function drawGame() {
 
 var game = new Game("canvas", getDefaultPalette(), 800, 600);
 //drawGame.bind(game)();
+
+var io = {
+    invokeLater: function(f, del) { window.setTimeout(f, del)}
+}

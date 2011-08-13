@@ -277,7 +277,7 @@ initialSymbolScope = SymbolScope [
         ("ODD",(GlobalScope, Just $ TypeRefProcedure [mkArgument "v" typeInteger] (Just $ typeBoolean) False,Nothing)),
         ("ROUND",(GlobalScope, Just $ TypeRefProcedure [mkArgument "v" typeDouble] (Just $ typeInteger) False,Nothing)),
         ("ORD",(GlobalScope, Just $ TypeRefProcedure [mkArgument "v" typeChar] (Just $ typeInteger) False,Nothing)),
-        ("RANDOM",(GlobalScope, Just $ TypeRefProcedure [] (Just $ TypeRefVoid) False,Nothing)),
+        ("RANDOM",(GlobalScope, Just $ TypeRefProcedure [AnyArgument False] (Just $ typeInteger) False,Nothing)),
         -- TODO: fix it("RANDOM",(GlobalScope, Just $ TypeRefProcedure [mkArgument "limit" typeInteger] (Just $ typeInteger) False,Nothing)),
         ("MEMAVAIL",(GlobalScope, Just $ TypeRefProcedure [] (Just $ typeInteger) False,Nothing)),
         ("FILESIZE",(GlobalScope, Just $ TypeRefProcedure [AnyArgument False] (Just $ typeInteger) False,Nothing)),

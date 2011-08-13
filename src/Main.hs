@@ -49,8 +49,8 @@ prettyJS str = do
     readFile "/tmp/out.js"
 
 main = do
-    --let proj = mkProject ["/home/tilarids/contests/icfpc11/icfpc2011/btetr"] "btetr"
-    let proj = mkProject ["../samples"] "paporotn"
+    let proj = mkProject ["/home/san/icfpc2011/btetr"] "btetr"
+--    let proj = mkProject ["../samples"] "paporotn"
 --    let proj = mkProject ["/home/san/icfpc2011/btetr/bt/samples"] "prog1"
     proj <- prepareProject proj
     proj' <- compileFiles proj [projectMainFile proj]

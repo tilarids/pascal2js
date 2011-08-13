@@ -1025,7 +1025,7 @@ keepOnlyUnitScopeSymbols scope =
 
 
 maybeWrapProcedure False _ code = code
-maybeWrapProcedure True Nothing code = "var yi = " ++ code ++ "; if (RT_isGenerator(yi)) {for (var i in yi) yield i; }"
+maybeWrapProcedure True Nothing code = "try { var yi = " ++ code ++ "; if (RT_isGenerator(yi)) {for (var i in yi) yield i; }} catch (ex) { if (ex instanceof OutVariables); else throw ex;}"
 maybeWrapProcedure True (Just lst) code = "try {var yi = " ++ code ++ "; if (RT_isGenerator(yi)) {for (var i in yi) yield i; } else {throw new OutVariables(yi)}} catch (ex) { if (ex instanceof OutVariables) {"++ assignOutVarsFromEx lst ++ "} else {throw ex;}}"
     where
         assignOutVarsFromEx lst =
