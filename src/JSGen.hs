@@ -705,7 +705,7 @@ transformExpression scope e@(Expr Add _ _) = binaryOpExpression scope e $ (\v1 v
 transformExpression scope e@(Expr Sub _ _) = binaryOpExpression scope e $ (\v1 v2 -> v1 ++"-" ++ v2)
 transformExpression scope e@(Expr Mul _ _) = binaryOpExpression scope e $ (\v1 v2 -> v1 ++"*" ++ v2)
 transformExpression scope e@(Expr LAnd _ _) = binaryOpExpression scope e $ (\v1 v2 -> v1 ++" && " ++ v2)
-transformExpression scope e@(Expr LOr _ _) = binaryOpExpression scope e $ (\v1 v2 -> v1 ++" && " ++ v2)
+transformExpression scope e@(Expr LOr _ _) = binaryOpExpression scope e $ (\v1 v2 -> v1 ++" || " ++ v2)
 transformExpression scope e@(Expr LessThan _ _) = binaryOpExpression scope e $ (\v1 v2 -> v1 ++" < " ++ v2)
 transformExpression scope e@(Expr GreaterThan _ _) = binaryOpExpression scope e $ (\v1 v2 -> v1 ++" > " ++ v2)
 transformExpression scope e@(Expr LE _ _) = binaryOpExpression scope e $ (\v1 v2 -> v1 ++" <= " ++ v2)
@@ -981,12 +981,13 @@ transformExpression scope e@(Expr PointerDeref [p] _) =
 transformExpression scope e@(Expr TakeAddress [p@(Expr (VarRef nm) [] _)] _) =
     let SymbolScope ss = scopeSymbols scope
     in case lookup nm ss of
-        Just (site,_,_) -> REExpr $ JConst $ (getVariableName nm site scope)
+        Just (site,Just (TypeRefProcedure _ _ _),_) -> REExpr $ JConst $ (getVariableName nm site scope)
+        -- Just (site,_,_) -> REExpr $ JConst $ (getVariableName nm site scope)
+        Just (site,_,_) -> REExpr $ JConst $ "RT_takeAddr(" ++ (show $ transformExpression scope p) ++ ") /* " ++ show p ++ "*/"
         Nothing -> error $ "Expr TakeAddress: not found"
 
 transformExpression scope e@(Expr TakeAddress [p] _) =
-    REExpr $ JConst $
-                  "RT_takeAddr(" ++ (show $ transformExpression scope p) ++ ") /* " ++ show p ++ "*/"
+    REExpr $ JConst $ "RT_takeAddr(" ++ (show $ transformExpression scope p) ++ ") /* " ++ show p ++ "*/"
 
 transformExpression scope e@(Expr InSet [e1, e2] _) =
     REExpr $ JConst $

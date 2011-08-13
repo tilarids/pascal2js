@@ -69,6 +69,7 @@ data Argument =
 
 mkArgument nm tr = Argument False nm (Just tr)
 isOutArgument (Argument True _ _) = True
+isOutArgument (AnyArgument True) = True
 isOutArgument _ = False
 getArgName (Argument _ nm _) = nm
 getArgName _ = error $ "getArgName with broken arg"
@@ -304,7 +305,7 @@ initialSymbolScope = SymbolScope [
         ("SETSELECTORBASE",(GlobalScope, Just $ TypeRefProcedure [AnyArgument True] Nothing False,Nothing)),
         ("SETSELECTORLIMIT",(GlobalScope, Just $ TypeRefProcedure [AnyArgument True] Nothing False,Nothing)),
         ("VAL",(GlobalScope, Just $ TypeRefProcedure [mkArgument "s" typeString, Argument True "i" $ Just typeInteger, Argument True "i" $ Just typeInteger] Nothing False,Nothing)),
-        ("STR",(GlobalScope, Just $ TypeRefProcedure [mkArgument "i" typeInteger, Argument True "s" $ Just typeString ] Nothing False,Nothing)),
+        ("STR",(GlobalScope, Just $ TypeRefProcedure [mkArgument "i" typeInteger, AnyArgument True ] Nothing False,Nothing)),
         ("UPCASE",(GlobalScope, Just $ TypeRefProcedure [AnyArgument False] (Just typeChar) False,Nothing)),
         ("SIZEOF",(GlobalScope, Just $ TypeRefProcedure [AnyArgument False] (Just typeInteger) False,Nothing)),
         ("ROUND",(GlobalScope, Just $ TypeRefProcedure [AnyArgument False] (Just typeInteger) False,Nothing)),
