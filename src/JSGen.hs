@@ -15,13 +15,44 @@ import Data.Maybe
 import Data.Either
 import Data.List
 import Control.Applicative hiding (Const)
+import Control.Monad.State
 import Language.HJavaScript.Syntax as JS
 import Debug.Trace
 
+data JS = JS {
+                jsScope :: Scope,
+                jsSequence :: Integer,          -- sequence (for loop indexes)
+                jsLoopIndex :: Integer          -- current loop index
+            }
+
+type JSS a = State JS a
+
+getJSScope :: JSS Scope
+getJSScope = do
+    jss <- get
+    return $ jsScope jss
+
+saveJSState :: JSS JS
+saveJSState = get
+
+restoreJSState :: JS -> JSS ()
+restoreJSState jss = do                     -- restore stuff, except sequence
+    savedSequence <- jsSequence <$> get
+    put $ jss { jsSequence = savedSequence }
+    return ()
+
+preservingJSState act = do
+    sv <- saveJSState
+    retval <- act
+    restoreJSState sv
+    return retval
+
 generateJS :: [Event] -> Block ()
 generateJS ((Event (EventProgramStart) scope):es) =
-    let (decls, remains) = parseDecls es []
-        (body, []) = parseBody remains
+
+    let s = JS scope 1000 0
+        ((decls, remains), s') = runState (parseDecls es []) s
+        ((body, []),s'') = runState (parseBody remains) s'
         blk = toJSBlock (decls, body) :: Block ()
     in blk
 
@@ -37,7 +68,7 @@ getVariableName nm (FunctionRetVal) scope = "_rt_retval"
 getVariableName nm (WithScope ws) scope = ws ++ "." ++ nm
 getVariableName nm _ _  = nm
 
-parseDecls :: [Event] -> [Stmt ()] -> ( [Stmt ()], [Event] )
+parseDecls :: [Event] -> [Stmt ()] -> JSS ( [Stmt ()], [Event] )
 
 parseDecls ((Event (EventVariable _ _ _ (Just (Expr (SomeCode _) [] _))) _):es) acc =
     parseDecls es acc   -- skip "procedure as a var"
@@ -61,72 +92,92 @@ parseDecls (ev@(Event (EventVariable _ nm typ (Just expr)) scope):es) acc = pars
                         : acc
         -- : (doCommentStmt $ show typ)
 
-parseDecls ((Event (EventFunctionStart site nm proc@(TypeRefProcedure arg mtyp _)) scope):es) acc =
-
-        let (decls, remains) = parseDecls es []
-            (body, rem2) = parseBody remains
-            namespace = compiledName $ fromJustX "parseDecl1" $ scopeCurrentUnit scope
-        in parseDecls rem2 $
+parseDecls ((Event (EventFunctionStart site nm proc@(TypeRefProcedure arg mtyp _)) scope):es) acc = do
+        (decls, remains) <- parseDecls es []
+        (body, rem2) <- parseBody remains
+        let  namespace = compiledName $ fromJustX "parseDecl1" $ scopeCurrentUnit scope
+        parseDecls rem2 $
             (VarDeclAssign (getVariableName nm site scope) $ JConst $ "function" ++ (showArgs arg) ++ "{" ++ show (toJSBlock (decls, body)) ++ "}")
             :
             acc
 -- otherwise
-parseDecls es acc = (reverse acc, es)
+parseDecls es acc = return $ (reverse acc, es)
 
+produceStatement :: Statement -> JSS (Stmt ())
 
-produceStatement :: Scope -> Statement -> Stmt ()
+produceStatement (AssignSt e1 e2) = do
+    scope <- getJSScope
+    return $ ExpStmt $ JConst $ (show $ transformExpression scope e1) ++ " = " ++ (show $ transformExpression scope e2)
 
-produceStatement scope (AssignSt e1 e2) =
-    ExpStmt $ JConst $ (show $ transformExpression scope e1) ++ " = " ++ (show $ transformExpression scope e2)
+produceStatement (IfSt e1 (CodeBlock []) b2) = do
+    scope <- getJSScope
+    cb <- transformCodeBlock b2
+    return $ ExpStmt $ JConst $ "if (!(" ++ (show $ transformExpression scope e1) ++ ")) { "
+            ++ cb ++ " }"
+produceStatement (IfSt e1 b1 (CodeBlock []) ) = do
+    scope <- getJSScope
+    cb <- transformCodeBlock b1
+    return $ ExpStmt $ JConst $ "if (" ++ (show $ transformExpression scope e1) ++ ") { "
+            ++ cb ++ " }"
+produceStatement (IfSt e1 b1 b2) = do
+    scope <- getJSScope
+    cb2 <- transformCodeBlock b2
+    cb1 <- transformCodeBlock b1
+    return $ ExpStmt $ JConst $ "if (" ++ (show $ transformExpression scope e1) ++ ") { " ++ cb1 ++ " } else { "
+            ++ cb2 ++ " }"
 
-produceStatement scope (IfSt e1 (CodeBlock []) b2) =
-    ExpStmt $ JConst $ "if (!(" ++ (show $ transformExpression scope e1) ++ ")) { "
-            ++ (transformCodeBlock scope b2) ++ " }"
-produceStatement scope (IfSt e1 b1 (CodeBlock []) ) =
-    ExpStmt $ JConst $ "if (" ++ (show $ transformExpression scope e1) ++ ") { "
-            ++ (transformCodeBlock scope b1) ++ " }"
-produceStatement scope (IfSt e1 b1 b2) =
-    ExpStmt $ JConst $ "if (" ++ (show $ transformExpression scope e1) ++ ") { " ++ (transformCodeBlock scope b1) ++ " } else { "
-            ++ (transformCodeBlock scope b2) ++ " }"
+produceStatement (EvalSt e1) = do
+    scope <- getJSScope
+    return $ ExpStmt $ JConst $ (show $ transformExpression scope e1)
 
-produceStatement scope (EvalSt e1) =
-    ExpStmt $ JConst $ (show $ transformExpression scope e1)
+produceStatement  e@(WithSt [] blk) = do
+    scope <- getJSScope
+    (ExpStmt . JConst) <$> transformCodeBlock blk
 
-produceStatement scope e@(WithSt [] blk) = ExpStmt $ JConst $ transformCodeBlock scope blk
-produceStatement scope e@(WithSt (exp:es) blk) =
+produceStatement e@(WithSt (exp:es) blk) = do
+    scope <- getJSScope
     let ET etype _ = getExprType scope exp
         ok = isRecord etype
-    in if not ok
+    if not ok
         then error $ "withst: not all record types: "++show (etype,e)
-        else ExpStmt $ JConst $
+        else do
+            stmt <- preservingJSState $ do
+                augmentScope exp
+                produceStatement (WithSt es blk)
+            return $ ExpStmt $ JConst $
             -- "with (" ++ (show $ transformExpression scope exp)++ ") {" ++
-                    (show $ produceStatement (augmentScope scope exp) (WithSt es blk))
+                    (show $ stmt)
               --      ++ "}"
     where
-        augmentScope scope exp =
+        augmentScope exp = do
+            scope <- getJSScope
+            js <- get
             let ET (TypeRefRecord lst) _ = getExprType scope exp
                 SymbolScope ss = scopeSymbols scope
                 newsyms = map (\(nm,tr) -> (nm,(WithScope (show $ transformExpression scope exp),Just tr, Nothing))) lst
-            in scope { scopeSymbols = SymbolScope (newsyms ++ ss) }
+            put $ js { jsScope = scope { scopeSymbols = SymbolScope (newsyms ++ ss) }}
 
 
 
 
 
-produceStatement scope e@(ForSt varr from downto to blk) =
+produceStatement e@(ForSt varr from downto to blk) = do
+    scope <- getJSScope
     let ET t1 _ = getExprType scope from
         ET t2 _ = getExprType scope to
         ET varrt _ = getExprType scope varr
         from' = castExpr scope from varrt
         to' = castExpr scope to varrt
-        codeBlockS =
-            case blk of
-                CodeBlock [] -> ";"
-                _ -> "{" ++ transformCodeBlock scope blk ++ "}"
         (symComp, symCrement) = case not downto of
                 False -> ("<=","++")
                 True -> (">= ","--")
-    in case (from', to') of
+    codeBlockS <-
+        case blk of
+            CodeBlock [] -> return ";"
+            _ -> do
+                    cb <- transformCodeBlock blk
+                    return $ "{" ++ cb ++ "}"
+    return $ case (from', to') of
         (Right frE, Right toE) -> ExpStmt $ JConst $
                     "for (" ++ (show $ transformExpression scope varr) ++ " = "
                         ++ (show $ transformExpression scope frE) ++ "; " ++
@@ -135,70 +186,82 @@ produceStatement scope e@(ForSt varr from downto to blk) =
                         (show $ transformExpression scope varr) ++ symCrement  ++ ")" ++ codeBlockS
         _ -> error $ "for stmt: expressions don't cast: " ++ show e
 
-produceStatement scope e@(CaseSt cond cases defBlk) =
+produceStatement  e@(CaseSt cond cases defBlk) = do
+    scope <- getJSScope
     let ET condType _ = getExprType scope cond
         getCodeBlock blk = case blk of
-                                CodeBlock [] -> ";"
-                                _ -> "{" ++ (transformCodeBlock scope blk) ++ " break; }"
-        defaultCodeBlock = getCodeBlock defBlk
-        allCasesS = checkedCases ++ "default: " ++ defaultCodeBlock
-        checkedCases = concatMap produceCase cases
-        produceCase (caseLabels, blk) = (concatMap produceLabel caseLabels) ++ (getCodeBlock blk)
+                                CodeBlock [] -> return $ ";"
+                                _ -> do
+                                            cb <- transformCodeBlock blk
+                                            return $ "{" ++ cb ++ " break; }"
+    defaultCodeBlock <- getCodeBlock defBlk
+    let
+        produceCase (caseLabels, blk) = do
+            cblk <- getCodeBlock blk
+            lblz <- mapM produceLabel caseLabels
+            return $ (concat lblz) ++ cblk
         produceLabel e@(Expr Range [] _) = error $ "Ranges are not supported for the case stmt" ++ (show e)
-        produceLabel label = "case " ++ (show $ transformExpression scope label) ++ ":"
-    in case condType of
+        produceLabel label = return $ "case " ++ (show $ transformExpression scope label) ++ ":"
+    checkedCases <- concat <$> mapM produceCase cases
+    let allCasesS = checkedCases ++ "default: " ++ defaultCodeBlock
+    return $ case condType of
         _ | isIntegerType condType || isChar condType -> ExpStmt $ JConst $
                     "switch (" ++(show $ transformExpression scope cond) ++ ") { " ++ allCasesS ++ "}"
           | otherwise -> error $ "case stmt: case expression is not char or integer: " ++ show (condType,cond)
 
-produceStatement scope e@(WhileSt cond blk) =
+produceStatement  e@(WhileSt  cond blk) = do
+    scope <- getJSScope
+    cb <- transformCodeBlock blk
     let ET t1 _ = getExprType scope cond
         codeBlockS =
             case blk of
                 CodeBlock [] -> ";"
-                _ -> "{" ++ transformCodeBlock scope blk ++ "}"
-    in case t1 of
+                _ -> "{" ++ cb ++ "}"
+    return $ case t1 of
         (TypeRefNative "boolean") -> ExpStmt $ JConst $
                     "while (" ++ (show $ transformExpression scope cond) ++ ")" ++ codeBlockS
         _ -> error $ "whilest stmt: expressions don't cast: " ++ show t1
 
-produceStatement scope e@(RepeatSt blk cond) =
+produceStatement e@(RepeatSt blk cond) = do
+    scope <- getJSScope
+    cb <- transformCodeBlock  blk
     let ET t1 _ = getExprType scope cond
         codeBlockS =
             case blk of
                 CodeBlock [] -> " {}"
-                _ -> "{" ++ transformCodeBlock scope blk ++ "}"
-    in case t1 of
+                _ -> "{" ++ cb ++ "}"
+    return $ case t1 of
         (TypeRefNative "boolean") -> ExpStmt $ JConst $
                     "do " ++ codeBlockS ++ " while (!(" ++ (show $ transformExpression scope cond) ++ "))"
         _ -> error $ "repeat stmt: expressions don't cast: " ++ show t1
 
 
-produceStatement scope stmt =
-    ExpStmt $ JConst $ "NOTIMPL(/* " ++(take 20 $ show stmt) ++" */)"
+produceStatement  stmt =
+    return $ ExpStmt $ JConst $ "NOTIMPL(/* " ++(take 20 $ show stmt) ++" */)"
 
 
-transformCodeBlock :: Scope -> CodeBlock -> String
-transformCodeBlock _ (CodeBlock []) = ""
-transformCodeBlock scope (CodeBlock stmts) =
-        (concat $ intersperse ";" $ map (show . produceStatement scope) stmts) ++ ";"
+transformCodeBlock :: CodeBlock -> JSS String
+transformCodeBlock (CodeBlock []) = return $ ""
+transformCodeBlock (CodeBlock stmts) = do
+        stmts' <- mapM (produceStatement) stmts
+        return $ (concat $ intersperse ";" $ map show stmts') ++ ";"
 
 
-parseBody :: [Event] -> ([Stmt ()], [Event])
-parseBody ((Event (EventCodeBlock nm (CodeBlock stmts)) scope):es) = (pbody, es)
-  where
-    pbody =
-        let jss = map (produceStatement scope) (stmts ++
+parseBody :: [Event] -> JSS ([Stmt ()], [Event])
+parseBody ((Event (EventCodeBlock nm (CodeBlock stmts)) scope):es) = do
+    modify (\o -> o { jsScope = scope })
+    pbody <-
+        mapM produceStatement (stmts ++
                                                     if (scopeHasRetVal scope || collectOutArgs scope /= [])
                                                         then [EvalSt $ Expr (VarRef "EXIT") [] noPosition]
                                                         else []
                                                 )
-        in jss
+    return (pbody, es)
         -- ExpStmt $ JConst "return"
 
 parseBody (e:es) = error $ "expecting body, got: "++show e
 
-parseBody [] = ([doCommentStmt "empty BODY!"],[])
+parseBody [] = return $ ([doCommentStmt "empty BODY!"],[])
 
 showArgs args = "(" ++ (concat $ intersperse "," $ map show1arg args) ++ ")"
 show1arg (Argument _ nm _) = nm

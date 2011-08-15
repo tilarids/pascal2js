@@ -1,7 +1,7 @@
 {-
 
 see README for terms of use
-        
+
 -}
 module Works where
 

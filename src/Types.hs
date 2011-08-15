@@ -112,6 +112,8 @@ data Op =
 data Expr = Expr Op [Expr] SourcePosition
     deriving (Show,Read,Eq)
 
+type UniqueIndex = Integer
+
 data Statement =
         CallNative |
         AssignSt Expr Expr |
