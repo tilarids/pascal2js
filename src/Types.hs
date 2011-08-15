@@ -270,6 +270,7 @@ initialSymbolScope = SymbolScope [
         ("BYTE",(GlobalScope, Just $ TypeRefProcedure [AnyArgument False] (Just $ typeInteger) False,Nothing)),
         ("BOOLEAN",(GlobalScope, Just $ TypeRefProcedure [AnyArgument False] (Just $ typeBoolean) False,Nothing)),
         ("PCHAR",(GlobalScope, Just $ TypeRefProcedure [AnyArgument False] (Just $ typePChar) False,Nothing)),
+        ("CHAR",(GlobalScope, Just $ TypeRefProcedure [AnyArgument False] (Just $ typeChar) False,Nothing)),
         ("WORD",(GlobalScope, Just $ TypeRefProcedure [AnyArgument False] (Just $ typeInteger) False,Nothing)),
         ("INTEGER",(GlobalScope, Just $ TypeRefProcedure [AnyArgument False] (Just $ typeInteger) False,Nothing)),
         ("MAXINT",(GlobalScope, Just $ TypeRefProcedure [] (Just $ typeInteger) False,Nothing)),

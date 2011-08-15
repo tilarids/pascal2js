@@ -1,5 +1,6 @@
 {-# OPTIONS -XExistentialQuantification #-}
 {-# OPTIONS -XScopedTypeVariables #-}
+{-# OPTIONS -XGADTs #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE Rank2Types #-}
 {-
@@ -14,6 +15,7 @@ import Types
 import Data.Maybe
 import Data.Either
 import Data.List
+import Data.Char
 import Control.Applicative hiding (Const)
 import Control.Monad.State
 import Language.HJavaScript.Syntax as JS
@@ -97,17 +99,26 @@ parseDecls ((Event (EventFunctionStart site nm proc@(TypeRefProcedure arg mtyp _
         (body, rem2) <- parseBody remains
         let  namespace = compiledName $ fromJustX "parseDecl1" $ scopeCurrentUnit scope
         parseDecls rem2 $
+            (ExpStmt $ JConst ((getVariableName nm site scope) ++ ".RT$INFO = { firstArgIsVar: "++jsBoolean (arg /= [] && isOutArgument (head arg))++"}"))
+            :
             (VarDeclAssign (getVariableName nm site scope) $ JConst $ "function" ++ (showArgs arg) ++ "{" ++ show (toJSBlock (decls, body)) ++ "}")
             :
             acc
 -- otherwise
+
 parseDecls es acc = return $ (reverse acc, es)
+
+jsBoolean True = "true"
+jsBoolean _ = "false"
 
 produceStatement :: Statement -> JSS (Stmt ())
 
 produceStatement (AssignSt e1 e2) = do
     scope <- getJSScope
-    return $ ExpStmt $ JConst $ (show $ transformExpression scope e1) ++ " = " ++ (show $ transformExpression scope e2)
+    (e1',e2') <- transformAssignmentCasts (e1, e2)
+    let left = show $ transformExpression scope e1'
+    let right = show $ transformExpression scope e2'
+    return $ ExpStmt $ JConst $ left ++ " = " ++ right
 
 produceStatement (IfSt e1 (CodeBlock []) b2) = do
     scope <- getJSScope
@@ -125,6 +136,10 @@ produceStatement (IfSt e1 b1 b2) = do
     cb1 <- transformCodeBlock b1
     return $ ExpStmt $ JConst $ "if (" ++ (show $ transformExpression scope e1) ++ ") { " ++ cb1 ++ " } else { "
             ++ cb2 ++ " }"
+
+produceStatement (EvalSt (Expr (VarRef "BREAK") [] _)) = do
+    loopBreaker <- getLoopBreaker;
+    return $ ExpStmt $ JConst $ "{ "++loopBreaker++"=false; /* break-stmt */ continue; }"
 
 produceStatement (EvalSt e1) = do
     scope <- getJSScope
@@ -160,31 +175,33 @@ produceStatement e@(WithSt (exp:es) blk) = do
 
 
 
-
 produceStatement e@(ForSt varr from downto to blk) = do
     scope <- getJSScope
-    let ET t1 _ = getExprType scope from
-        ET t2 _ = getExprType scope to
-        ET varrt _ = getExprType scope varr
-        from' = castExpr scope from varrt
-        to' = castExpr scope to varrt
-        (symComp, symCrement) = case not downto of
-                False -> ("<=","++")
-                True -> (">= ","--")
-    codeBlockS <-
-        case blk of
-            CodeBlock [] -> return ";"
-            _ -> do
-                    cb <- transformCodeBlock blk
-                    return $ "{" ++ cb ++ "}"
-    return $ case (from', to') of
-        (Right frE, Right toE) -> ExpStmt $ JConst $
-                    "for (" ++ (show $ transformExpression scope varr) ++ " = "
-                        ++ (show $ transformExpression scope frE) ++ "; " ++
-                        (show $ transformExpression scope varr) ++ symComp ++
-                        (show $ transformExpression scope toE) ++ ";" ++
-                        (show $ transformExpression scope varr) ++ symCrement  ++ ")" ++ codeBlockS
-        _ -> error $ "for stmt: expressions don't cast: " ++ show e
+    generateLoop $ do
+        loopBreaker <- getLoopBreaker
+        let ET t1 _ = getExprType scope from
+            ET t2 _ = getExprType scope to
+            ET varrt _ = getExprType scope varr
+            from' = castExpr scope from varrt
+            to' = castExpr scope to varrt
+            (symComp, symCrement) = case not downto of
+                    False -> ("<=","++")
+                    True -> (">= ","--")
+        codeBlockS <-
+            case blk of
+                CodeBlock [] -> return ";"
+                _ -> do
+                        cb <- transformCodeBlock blk
+                        return $ "{" ++ cb ++ "}"
+        let retval = case (from', to') of
+                        (Right frE, Right toE) -> ExpStmt $ JConst $
+                            "for (" ++ (show $ transformExpression scope varr) ++ " = "
+                                ++ (show $ transformExpression scope frE) ++ "; " ++
+                                loopBreaker ++ "&& (" ++ (show $ transformExpression scope varr) ++ symComp ++
+                                (show $ transformExpression scope toE) ++ ");" ++
+                                (show $ transformExpression scope varr) ++ symCrement  ++ ")" ++ codeBlockS
+                        _ -> error $ "for stmt: expressions don't cast: " ++ show e
+        return retval
 
 produceStatement  e@(CaseSt cond cases defBlk) = do
     scope <- getJSScope
@@ -209,35 +226,82 @@ produceStatement  e@(CaseSt cond cases defBlk) = do
                     "switch (" ++(show $ transformExpression scope cond) ++ ") { " ++ allCasesS ++ "}"
           | otherwise -> error $ "case stmt: case expression is not char or integer: " ++ show (condType,cond)
 
-produceStatement  e@(WhileSt  cond blk) = do
+produceStatement  e@(WhileSt cond blk) = do
     scope <- getJSScope
-    cb <- transformCodeBlock blk
-    let ET t1 _ = getExprType scope cond
-        codeBlockS =
-            case blk of
-                CodeBlock [] -> ";"
-                _ -> "{" ++ cb ++ "}"
-    return $ case t1 of
-        (TypeRefNative "boolean") -> ExpStmt $ JConst $
-                    "while (" ++ (show $ transformExpression scope cond) ++ ")" ++ codeBlockS
-        _ -> error $ "whilest stmt: expressions don't cast: " ++ show t1
+    generateLoop $ do
+        loopBreaker <- getLoopBreaker
+        cb <- transformCodeBlock blk
+        let ET t1 _ = getExprType scope cond
+            codeBlockS =
+                case blk of
+                    CodeBlock [] -> ";"
+                    _ -> "{" ++ cb ++ "}"
+        return $ case t1 of
+            (TypeRefNative "boolean") -> ExpStmt $ JConst $
+                        "while (" ++ loopBreaker ++ "&& ("++(show $ transformExpression scope cond) ++ "))" ++ codeBlockS
+            _ -> error $ "whilest stmt: expressions don't cast: " ++ show t1
 
 produceStatement e@(RepeatSt blk cond) = do
     scope <- getJSScope
-    cb <- transformCodeBlock  blk
-    let ET t1 _ = getExprType scope cond
-        codeBlockS =
-            case blk of
-                CodeBlock [] -> " {}"
-                _ -> "{" ++ cb ++ "}"
-    return $ case t1 of
-        (TypeRefNative "boolean") -> ExpStmt $ JConst $
-                    "do " ++ codeBlockS ++ " while (!(" ++ (show $ transformExpression scope cond) ++ "))"
-        _ -> error $ "repeat stmt: expressions don't cast: " ++ show t1
+    generateLoop $ do
+        loopBreaker <- getLoopBreaker
+        cb <- transformCodeBlock  blk
+        let ET t1 _ = getExprType scope cond
+            codeBlockS =
+                case blk of
+                    CodeBlock [] -> " {}"
+                    _ -> "{" ++ cb ++ "}"
+            keepCond = "(" ++ (show $ transformExpression scope cond) ++")"
+        return $ case t1 of
+
+            (TypeRefNative "boolean") -> ExpStmt $ JConst $
+                        "while ( " ++ loopBreaker ++") { // repeat-until \n "++ codeBlockS ++"; if ("++keepCond++") break;}"
+            _ -> error $ "repeat stmt: expressions don't cast: " ++ show t1
 
 
 produceStatement  stmt =
     return $ ExpStmt $ JConst $ "NOTIMPL(/* " ++(take 20 $ show stmt) ++" */)"
+
+
+transformAssignmentCasts (lvalue@(Expr FunCall ((Expr (VarRef fn) [] _):arg:[]) _),rvalue) = do
+    scope <- getJSScope
+    let TypeScope initial = initialTypeScope
+    case lookup fn initial  of
+        Just (_,trn) -> do
+            let ET rt _ = getExprType scope rvalue
+                ET lt _ = getExprType scope arg
+            case (castExpr scope rvalue trn, lt) of
+                (Right e, TypeRefNative nativeName) -> do
+                    let wrappedRight = Expr FunCall [Expr (VarRef (map toUpper nativeName)) [] noPosition,rvalue] noPosition
+                    return $ traceval "transformAssignmentCasts: " $ (arg, wrappedRight)
+                    --error $  "all ok: "++show (lvalue,rvalue,trn,rt,lt)
+                    -- error $  "all ok: "++show (arg, wrappedRight)
+                (Left e,_) -> error $  "strange lvalue, does not cast.."++show (lvalue,rvalue,trn,rt)
+        _ -> error $ "lvalue: not likely" ++ show lvalue
+
+transformAssignmentCasts (lvalue,rvalue) =
+    return (lvalue,rvalue)
+
+generateLoop act = do
+    js <- saveJSState
+    modify (\o -> o { jsSequence = jsSequence o + 1, jsLoopIndex = jsSequence js} )
+    loopBreaker <- getLoopBreaker
+    retval <- act
+    restoreJSState js
+    return $
+        case retval of
+            ExpStmt (JConst str) -> ExpStmt $ JConst $
+                            "var "++loopBreaker++" = true;" ++
+                                str
+            _ -> error "generate loop: bad case"
+
+getLoopBreaker = do
+    ix <- jsLoopIndex <$> get
+    if ix <= 0
+        then error "loopBreaker: called not inside loop"
+        else return $ "loopBreaker" ++ (show ix)
+
+
 
 
 transformCodeBlock :: CodeBlock -> JSS String
@@ -690,7 +754,7 @@ getRangeLengths scope = getRangeLength0
         in case (r1v, r2v) of
             (Just (Expr (Const (ConstInteger i1)) [] _), Just (Expr (Const (ConstInteger i2)) [] _)) -> i2-i1+1
             _ -> error $ "getRangeLengths: not implemented on non-integer or non-constant ranges: "++show (r1v, r2v)
-    getRange0 e = error $ "getRangeLengths called on non range: "++(show e)
+--    getRange0 e = error $ "getRangeLengths called on non range: "++(show e)
 
 
 

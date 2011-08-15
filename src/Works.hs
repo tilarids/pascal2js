@@ -182,7 +182,8 @@ resolveProcedures site m decls = do
 --                        addVar m  (nm, njtrp, Nothing)
                         mapM_ addArgIntoScope argz
                         when (isJust mtr'') $
-                            trace ("retval mtr=" ++ (show mtr'')) $ addVar m (FunctionRetVal, nm, mtr'', Nothing)
+                            -- trace ("retval mtr=" ++ (show mtr'')) $
+                            addVar m (FunctionRetVal, nm, mtr'', Nothing)
                         addVar m (FunctionItselfSpec, "$TMP$" ++ nm, njtrp, Nothing)
                         processDecls LocalScope m sdecls
                         -- (code', hasYields) <- traceYields code
